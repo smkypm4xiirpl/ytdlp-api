@@ -65,5 +65,12 @@ jobs:
             console.log(`::error title=Node test failure::${escaped}`);
           }
           NODE
+          else
+            node --input-type=module - "$RUNNER_TEMP/ytdlp-test-output.txt" <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const output = readFileSync(process.argv[2], 'utf8');
+          const value = name => output.match(new RegExp(`^# ${name} (\\d+)$`, 'm'))?.[1] ?? 'unknown';
+          console.log(`::notice title=Linux test totals::tests=${value('tests')}, pass=${value('pass')}, fail=${value('fail')}, skipped=${value('skipped')}`);
+          NODE
           fi
           exit "$test_status"
