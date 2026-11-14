@@ -89,7 +89,6 @@ export function runManagedProcess(binary, args, options = {}) {
                 }
                 if (parentClosed) setImmediate(() => finish(failure));
             }, 1500);
-            escalation.unref?.();
         };
         const onAbort = () => stop("PROCESS_CANCELLED", "Process cancelled");
         signal?.addEventListener("abort", onAbort, { once: true });

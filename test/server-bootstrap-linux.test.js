@@ -29,7 +29,7 @@ if (process.platform === "linux") {
             if (result) return result;
             await new Promise(resolve => setTimeout(resolve, 25));
         }
-        throw new Error(message);
+        throw new Error(typeof message === "function" ? message() : message);
     }
 
     function launch(root, fakeYtdlp, { shutdownMs = 5000, hangShutdown = false, ignoreTerm = false } = {}) {
@@ -53,7 +53,13 @@ if (process.platform === "linux") {
     }
 
     async function nextMessage(server, type, timeoutMs = 10_000) {
-        return waitFor(() => server.lines.find(message => message.type === type), `fixture server did not emit ${type}; ${server.stderr}`, timeoutMs);
+        return waitFor(() => {
+            const expected = server.lines.find(message => message.type === type);
+            if (expected) return expected;
+            const startupError = server.lines.find(message => message.type === "startup-error");
+            if (startupError) throw new Error(`fixture startup failed: ${startupError.code}; ${server.stderr}`);
+            return null;
+        }, () => `fixture server did not emit ${type}; ${server.stderr}`, timeoutMs);
     }
 
     async function waitClose(child, timeoutMs = 10_000) {
@@ -74,8 +80,8 @@ if (process.platform === "linux") {
         ]);
         const fakeYtdlp = path.join(root, "fake-ytdlp.js");
         await writeFile(fakeYtdlp, `
-const fs=require('node:fs');
-fs.writeFileSync(process.env.PHASE6_PID_FILE,String(process.pid));
+import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.PHASE6_PID_FILE,String(process.pid));
 process.stderr.write('__YTDLP_PROGRESS__50|100|100|0|100\\n');
 if(process.env.PHASE6_IGNORE_TERM==='1') process.on('SIGTERM',()=>{});
 setInterval(()=>{},1000);
