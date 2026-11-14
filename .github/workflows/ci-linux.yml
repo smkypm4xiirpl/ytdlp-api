@@ -1,0 +1,51 @@
+name: Linux CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node 22 / Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      YTDLP_TEST_MEDIA_BIN_DIR: /usr/bin
+      FFMPEG_PATH: /usr/bin
+      FFPROBE_PATH: /usr/bin/ffprobe
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install FFmpeg and FFprobe
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find src -type f -name '*.js' -print0)
+
+      - name: Run tests
+        run: npm test

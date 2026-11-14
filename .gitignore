@@ -1,0 +1,10 @@
+node_modules/
+.env
+logs/*
+storage/downloads/*
+npm-debug.log*
+.DS_Store
+cookies.txt
+
+storage/*.sqlite
+storage/*.sqlite-*

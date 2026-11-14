@@ -1,0 +1,21 @@
+{
+  "name": "ytdlp-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted YouTube Downloader REST API",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "p-queue": "^8.1.0"
+  }
+}
