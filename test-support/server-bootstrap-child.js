@@ -22,12 +22,13 @@ process.env.PHASE6_PID_FILE = path.join(root, "fake-downloader.pid");
 process.env.PHASE6_IGNORE_TERM = ignoreTerm === "true" ? "1" : "0";
 
 try {
-    const [{ default: config }, manager, store, { startApiServer }] = await Promise.all([
+    const [{ default: config }, managerModule, store, { startApiServer }] = await Promise.all([
         import("../src/config.js"),
         import("../src/services/download-manager.js"),
         import("../src/services/job-store.js"),
         import("../src/server-bootstrap.js")
     ]);
+    const manager = { ...managerModule };
     manager.setDownloadProcessRunner(({ args, signal, onProgress }) => runYtDlpDownload({
         binary: execPath,
         args: [fakeYtdlpPath, "--", ...args],

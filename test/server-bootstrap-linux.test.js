@@ -62,6 +62,19 @@ if (process.platform === "linux") {
         }, () => `fixture server did not emit ${type}; ${server.stderr}`, timeoutMs);
     }
 
+    async function waitForDownloader(base, jobId, pidPath, apiKey) {
+        return waitFor(async () => {
+            const pid = Number(await readFile(pidPath, "utf8").catch(() => "0"));
+            if (Number.isSafeInteger(pid) && pid > 0) return pid;
+            const response = await fetch(`${base}/api/v1/downloads/${jobId}`, { headers: { "x-api-key": apiKey } });
+            const body = await response.json();
+            if (body.data?.status === "failed") {
+                throw new Error(`job failed before downloader spawn: ${body.data.error?.code}: ${body.data.error?.message}`);
+            }
+            return null;
+        }, () => `fake downloader did not start for job ${jobId}`);
+    }
+
     async function waitClose(child, timeoutMs = 10_000) {
         if (child.exitCode !== null || child.signalCode !== null) return { code: child.exitCode, signal: child.signalCode };
         return new Promise((resolve, reject) => {
@@ -134,7 +147,7 @@ setInterval(()=>{},1000);
         });
         assert.equal(post.status, 202);
         const activeId = (await post.json()).data.id;
-        const fakePid = await waitFor(async () => Number(await readFile(fixture.pidPath, "utf8")).catch(() => 0) || null, "fake downloader did not start");
+        const fakePid = await waitForDownloader(base, activeId, fixture.pidPath, key);
         assert.equal(await processRunning(fakePid), true);
         const detail = await fetch(`${base}/api/v1/downloads/${activeId}`, { headers: { "x-api-key": key } });
         assert.equal((await detail.json()).data.status, "downloading");
@@ -180,7 +193,7 @@ setInterval(()=>{},1000);
             body: JSON.stringify({ url: "https://youtube.com/watch?v=abcdefghijk", formatId: "18", output: "mkv" })
         });
         const activeId = (await post.json()).data.id;
-        const fakePid = await waitFor(async () => Number(await readFile(fixture.pidPath, "utf8")).catch(() => 0) || null, "TERM-resistant child did not start");
+        const fakePid = await waitForDownloader(`http://127.0.0.1:${ready.port}`, activeId, fixture.pidPath, key);
         running.child.kill("SIGTERM");
         assert.equal((await waitClose(running.child, 5000)).code, 42);
         assert.ok(running.lines.some(message => message.type === "shutdown-deadline"));

@@ -61,7 +61,7 @@ if (process.platform === "linux") {
 
  test("Linux normal parent exit does not kill a same-group child until owned cleanup",async t=>{
   const fixture={};
-  fixture.code="const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});process.stdout.write('PIDS:'+process.pid+','+child.pid+'\\n');process.exit(0);";
+  fixture.code="const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});process.stdout.write('PIDS:'+process.pid+','+child.pid+'\\n',()=>process.exit(0));";
   const result=await capturePids(fixture);
   t.after(()=>cleanupGroup(fixture.spawnPid));
   assert.equal(result.stdout.includes("PIDS:"),true);
