@@ -342,7 +342,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 - `node --check` for all 22 JavaScript files under `src`: **passed**.
 - Linux process-group and POSIX symlink runtime assertions: Windows cannot run these assertions. Ubuntu workflow run `43652204319` executed but failed in `npm test`; Windows wrapper results are not counted as Linux validation.
 - `git diff --check`: passed for the initial isolated branch before push. The follow-up correction is being rechecked before push.
-- GitHub Actions Ubuntu result: **FAIL (first run)**. Runner setup, Node 22, FFmpeg, `npm ci`, and syntax checks passed; `npm test` exited 1. The unauthenticated run-log endpoint requires repository admin rights, and check-run annotations only show the generic exit code. Code review found the Linux bootstrap subprocess fixture had stale `../../src` imports after its move to `test-support/`; imports were corrected to `../src`. This concrete defect is fixed; the rerun is still required to prove whether it was the only failure.
+- GitHub Actions Ubuntu results: **FAIL (first and second runs)**. Runner setup, Node 22, FFmpeg, `npm ci`, and syntax checks passed; `npm test` exited 1 in runs `43652204319` and `43652665561`. The unauthenticated run-log endpoint requires repository admin rights, and check-run annotations only showed the generic exit code. Code review found and corrected stale `../../src` imports in the Linux bootstrap subprocess fixture, but the second run still failed, so this was not the only failure or the sole cause. The workflow now emits bounded TAP failure excerpts as check annotations; another run is needed to identify remaining failures.
 
 ## Acceptance matrix — Phase 6
 
@@ -361,7 +361,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 | Retention stress and repeated recovery | **PASS** | Temporary SQLite/storage fixture with 1,000 terminal jobs; active job and temporary artifact are retained; repeated recovery does not duplicate records. |
 | Manager lifecycle MP4 AAC copy, MKV, MP3 | **PASS** | Fake yt-dlp child + real manager, Fastify, SQLite, FFmpeg/FFprobe, and local generated fixtures on Windows. This does not prove compatibility with a production yt-dlp binary or YouTube source formats. |
 | Windows full test suite | **PASS** | 53 pass, 0 fail, 1 expected platform skip, 54 total. |
-| Ubuntu Linux workflow | **FAIL (first run)** | Run `43652204319`, commit `45b77d8`: setup and syntax passed, full test command failed. Follow-up fix requires another run. |
+| Ubuntu Linux workflow | **FAIL (first and second runs)** | Runs `43652204319` (`45b77d8`) and `43652665561` (`70a8a85`) both passed setup/syntax and failed at `npm test`. Workflow diagnostics were added; another run is pending. |
 
 ## Residual risk and release assessment
 
@@ -385,4 +385,4 @@ On GitHub, inspect [Linux CI run 43652204319](https://github.com/smkypm4xiirpl/y
 
 ## GitHub Actions execution status
 
-The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Initial commit `5e31282` created the Phase 6 branch; run `43652204319` on commit `45b77d8` failed at `npm test`. The Linux bootstrap fixture import paths were corrected after source review; the corrected branch must pass CI before Linux acceptance can be marked PASS. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
+The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Initial commit `5e31282` created the Phase 6 branch; runs `43652204319` (`45b77d8`) and `43652665561` (`70a8a85`) both failed at `npm test`. The Linux bootstrap fixture import paths were corrected, but that alone did not make the suite pass. The current workflow adds failure annotations to reveal individual TAP failures; do not mark Linux acceptance PASS until a later run passes. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
