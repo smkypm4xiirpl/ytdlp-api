@@ -1,7 +1,7 @@
 import path from "node:path";
 import { writeSync } from "node:fs";
 import { execPath } from "node:process";
-import { runYtDlpDownload } from "../../src/services/download-process.js";
+import { runYtDlpDownload } from "../src/services/download-process.js";
 
 const [root, mediaBinDir, fakeYtdlpPath, shutdownTimeout, hangShutdown, ignoreTerm] = process.argv.slice(2);
 process.env.DOTENV_CONFIG_PATH = path.join(root, "empty.env");
@@ -23,10 +23,10 @@ process.env.PHASE6_IGNORE_TERM = ignoreTerm === "true" ? "1" : "0";
 
 try {
     const [{ default: config }, manager, store, { startApiServer }] = await Promise.all([
-        import("../../src/config.js"),
-        import("../../src/services/download-manager.js"),
-        import("../../src/services/job-store.js"),
-        import("../../src/server-bootstrap.js")
+        import("../src/config.js"),
+        import("../src/services/download-manager.js"),
+        import("../src/services/job-store.js"),
+        import("../src/server-bootstrap.js")
     ]);
     manager.setDownloadProcessRunner(({ args, signal, onProgress }) => runYtDlpDownload({
         binary: execPath,

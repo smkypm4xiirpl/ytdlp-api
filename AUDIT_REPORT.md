@@ -325,7 +325,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 
 # PHASE 6 — Linux CI and Residual Acceptance Closure
 
-**Environment:** Windows 11 local clone, Node.js 22.15.1. Tests use temporary directories/databases, synthetic media, and dummy API credentials only. No `.env` or cookie contents were read; no VPS, production service, YouTube download, deployment, or restart was used. The supplied GitHub SSH repository was confirmed accessible and empty. An isolated clone/branch is used for CI publication; the parent TWEBot repository is not modified or committed.
+**Environment:** Windows 11 local clone, Node.js 22.15.1. Tests use temporary directories/databases, synthetic media, and dummy API credentials only. No `.env` or cookie contents were read; no VPS, production service, YouTube download, deployment, or restart was used. The supplied GitHub SSH repository was confirmed accessible and empty. CI changes are isolated to the YT-DLP clone; the parent TWEBot repository was restored to its original `main` HEAD and staged user changes after an accidental local commit was immediately undone with a soft reset. No Phase 6 commit was pushed to the parent repository.
 
 ## Changes and evidence
 
@@ -340,28 +340,28 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 
 - `npm test` (Windows, full suite): **54 tests; 53 passed, 0 failed, 1 skipped**. The skip is symlink creation, rejected by Windows with `EPERM`; the Ubuntu job is intended to execute that filesystem case.
 - `node --check` for all 22 JavaScript files under `src`: **passed**.
-- Linux process-group and POSIX symlink runtime assertions: **NOT TESTED locally** (Windows host has no Linux runtime). A passing Windows wrapper test is not counted as Linux validation.
-- `git diff --check`: pending final isolated-clone check before push.
-- GitHub Actions Ubuntu result: **NOT TESTED** until this branch is pushed and the run is inspected. Do not treat workflow configuration or Windows tests as Linux evidence.
+- Linux process-group and POSIX symlink runtime assertions: Windows cannot run these assertions. Ubuntu workflow run `43652204319` executed but failed in `npm test`; Windows wrapper results are not counted as Linux validation.
+- `git diff --check`: passed for the initial isolated branch before push. The follow-up correction is being rechecked before push.
+- GitHub Actions Ubuntu result: **FAIL (first run)**. Runner setup, Node 22, FFmpeg, `npm ci`, and syntax checks passed; `npm test` exited 1. The unauthenticated run-log endpoint requires repository admin rights, and check-run annotations only show the generic exit code. Code review found the Linux bootstrap subprocess fixture had stale `../../src` imports after its move to `test-support/`; imports were corrected to `../src`. This concrete defect is fixed; the rerun is still required to prove whether it was the only failure.
 
 ## Acceptance matrix — Phase 6
 
 | Acceptance criterion | Status | Evidence / limit |
 | --- | --- | --- |
-| Linux process-group cancellation and descendant SIGTERM handling | **NOT TESTED** | Linux-only subprocess integration test added; requires Ubuntu CI run. |
-| Linux SIGKILL escalation after ignored SIGTERM | **NOT TESTED** | Fixture and PID ownership assertions added; requires Ubuntu CI run. |
-| Parent normal exit cleanup behavior | **NOT TESTED** | Linux process-group test added; requires Ubuntu CI run. |
-| Server SIGTERM while managed child active; shutdown deadline and DB/lock outcome | **NOT TESTED** | Actual bootstrap subprocess tests added; requires Ubuntu CI run. |
+| Linux process-group cancellation and descendant SIGTERM handling | **PARTIAL** | Ubuntu run executed the test suite but failed overall; no per-test logs were available without repository admin access. Re-run required. |
+| Linux SIGKILL escalation after ignored SIGTERM | **PARTIAL** | Linux fixture is present; overall Ubuntu suite failed and logs are unavailable. Re-run required. |
+| Parent normal exit cleanup behavior | **PARTIAL** | Linux fixture is present; no per-test success evidence from failed run. Re-run required. |
+| Server SIGTERM while managed child active; shutdown deadline and DB/lock outcome | **PARTIAL** | Ubuntu run failed; source inspection found and fixed stale relative imports in the subprocess fixture. Re-run required. |
 | Child calling `setsid()` / leaving managed process group | **PARTIAL** | Test explicitly records process-group limitation and tears down exact fixture-owned detached group. A detached process is outside the group-kill guarantee by design. |
-| Symlink escape and cleanup protection on actual manager | **PARTIAL** | Windows case skipped with EPERM. Ubuntu test is present but not yet run. |
-| Full bootstrap, recovery-before-listen, second-instance lock, shutdown/restart | **NOT TESTED** | Linux subprocess fixture added; requires Ubuntu CI run. |
+| Symlink escape and cleanup protection on actual manager | **PARTIAL** | Windows case skipped with EPERM; Ubuntu suite failed elsewhere overall, so symlink test result is not claimed. |
+| Full bootstrap, recovery-before-listen, second-instance lock, shutdown/restart | **PARTIAL** | Linux subprocess fixture failed to resolve stale imports, now fixed; successful rerun is pending. |
 | `/formats` route-specific rate limit | **PASS** | Fastify inject verifies threshold, 429 response, body, and headers on Windows. |
 | `POST /downloads` route-specific rate limit | **PASS** | Fastify inject verifies independent threshold, 429 response, body, and headers on Windows. |
 | Filesystem failure injection (rename/read-only/ENOSPC/free-space/oversize) | **PASS** | Real manager with deterministic hooks and temporary storage; verifies failed durable state and no false completed artifact. This is injected failure, not physical disk exhaustion. |
 | Retention stress and repeated recovery | **PASS** | Temporary SQLite/storage fixture with 1,000 terminal jobs; active job and temporary artifact are retained; repeated recovery does not duplicate records. |
 | Manager lifecycle MP4 AAC copy, MKV, MP3 | **PASS** | Fake yt-dlp child + real manager, Fastify, SQLite, FFmpeg/FFprobe, and local generated fixtures on Windows. This does not prove compatibility with a production yt-dlp binary or YouTube source formats. |
 | Windows full test suite | **PASS** | 53 pass, 0 fail, 1 expected platform skip, 54 total. |
-| Ubuntu Linux workflow | **NOT TESTED** | Must be updated after inspecting the actual Actions run; no claim based solely on workflow creation. |
+| Ubuntu Linux workflow | **FAIL (first run)** | Run `43652204319`, commit `45b77d8`: setup and syntax passed, full test command failed. Follow-up fix requires another run. |
 
 ## Residual risk and release assessment
 
@@ -381,8 +381,8 @@ Get-ChildItem src -Recurse -File -Filter *.js | ForEach-Object { node --check $_
 npm test
 ```
 
-On GitHub, push the isolated branch and inspect **Actions → Linux CI** for that commit, or dispatch `Linux CI` manually. The workflow installs dependencies and media tools from the Ubuntu runner and runs the same syntax check and suite. Linux process-group, detached-child, full bootstrap and symlink claims remain unverified until that run completes and logs are reviewed.
+On GitHub, inspect [Linux CI run 43652204319](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43652204319) and the follow-up run after the fixture import correction. The workflow installs dependencies and media tools from the Ubuntu runner and runs the same syntax check and suite. Linux process-group, detached-child, full bootstrap and symlink claims remain unverified until a complete run passes and individual test results are reviewed.
 
 ## GitHub Actions execution status
 
-The Phase 6 branch was committed locally in the isolated clone as `5e31282` (`codex/phase6-linux-ci`) and a push was attempted to the supplied SSH remote. GitHub rejected write access: `Permission to smkypm4xiirpl/ytdlp-api.git denied to ImmoDevs`. No alternate SSH identity/key was tried. Consequently, no GitHub Actions run exists and every Linux-only acceptance item above remains **NOT TESTED** (or **PARTIAL** where only the platform limitation was demonstrated). To unblock, grant the currently configured GitHub account `ImmoDevs` write access to that repository, or configure the intended authorized SSH identity locally; then push this branch and inspect the workflow run before changing these statuses.
+The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Initial commit `5e31282` created the Phase 6 branch; run `43652204319` on commit `45b77d8` failed at `npm test`. The Linux bootstrap fixture import paths were corrected after source review; the corrected branch must pass CI before Linux acceptance can be marked PASS. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
