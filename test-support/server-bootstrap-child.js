@@ -1,5 +1,5 @@
 import path from "node:path";
-import { writeSync } from "node:fs";
+import { writeFileSync, writeSync } from "node:fs";
 import { execPath } from "node:process";
 import { runYtDlpDownload } from "../src/services/download-process.js";
 
@@ -33,7 +33,8 @@ try {
         args: [fakeYtdlpPath, "--", ...args],
         signal,
         timeoutMs: 30_000,
-        onProgress
+        onProgress,
+        onSpawn(pid) { writeFileSync(process.env.PHASE6_PID_FILE, String(pid)); }
     }));
     if (hangShutdown === "true") manager.shutdownDownloadManager = () => new Promise(() => {});
     const runtime = await startApiServer({
@@ -50,6 +51,6 @@ try {
     });
     writeSync(1, `${JSON.stringify({ type: "ready", port: runtime.address.port })}\n`);
 } catch (error) {
-    writeSync(1, `${JSON.stringify({ type: "startup-error", code: error.code ?? "STARTUP_FAILED" })}\n`);
+    writeSync(1, `${JSON.stringify({ type: "startup-error", code: error.code ?? "STARTUP_FAILED", message: error.message })}\n`);
     process.exitCode = 2;
 }

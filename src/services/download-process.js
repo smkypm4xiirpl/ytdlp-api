@@ -9,7 +9,7 @@ export function downloadTimeoutMs(maxDurationSeconds) {
     return Math.min(Math.max(calculated, 30 * 60 * 1000), 6 * 60 * 60 * 1000);
 }
 
-export async function runYtDlpDownload({ binary, args, signal, timeoutMs, onProgress }) {
+export async function runYtDlpDownload({ binary, args, signal, timeoutMs, onProgress, onSpawn }) {
     let output = "";
     let stderrRemainder = "";
     try {
@@ -18,6 +18,7 @@ export async function runYtDlpDownload({ binary, args, signal, timeoutMs, onProg
             timeoutMs,
             maxStdoutBytes: MAX_MARKER_OUTPUT,
             maxStderrBytes: MAX_ERROR_OUTPUT,
+            onSpawn,
             onStdout(chunk) { output += chunk; },
             onStderr(chunk) {
                 const parts = (stderrRemainder + chunk).split(/\r?\n/);

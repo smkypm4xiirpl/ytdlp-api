@@ -57,7 +57,7 @@ if (process.platform === "linux") {
             const expected = server.lines.find(message => message.type === type);
             if (expected) return expected;
             const startupError = server.lines.find(message => message.type === "startup-error");
-            if (startupError) throw new Error(`fixture startup failed: ${startupError.code}; ${server.stderr}`);
+            if (startupError) throw new Error(`fixture startup failed: ${startupError.code}: ${startupError.message}; ${server.stderr}`);
             return null;
         }, () => `fixture server did not emit ${type}; ${server.stderr}`, timeoutMs);
     }
