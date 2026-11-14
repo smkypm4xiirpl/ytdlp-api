@@ -342,7 +342,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 - `node --check` across `src`, `test`, and `test-support`: **37 JavaScript files passed**.
 - Linux process-group and POSIX symlink runtime assertions: Windows cannot run these assertions. Ubuntu workflow run `43652204319` executed but failed in `npm test`; Windows wrapper results are not counted as Linux validation.
 - `git diff --check`: passed for the initial isolated branch before push. The follow-up correction is being rechecked before push.
-- GitHub Actions Ubuntu results: runs `43652204319`, `43652665561`, `43652904681`, `43653487525`, and `43653771115` failed at `npm test`, exposing Linux-only fixture issues. The fixes include retaining the SIGKILL escalation timer, using a mutable manager wrapper for ESM exports, using a valid ESM fake downloader, explicit normal-parent exit, spawn PID reporting, and startup/job failure diagnostics. Run `43654011121` on `4b5bacf` completed successfully. A workflow success annotation is being added to record exact Linux TAP totals on the next run; test-count verification is pending.
+- GitHub Actions Ubuntu results: runs `43652204319`, `43652665561`, `43652904681`, `43653487525`, and `43653771115` failed at `npm test`, exposing Linux-only fixture issues. Fixes retained the SIGKILL escalation timer, wrapped ESM manager exports in a mutable object, used a valid ESM fake downloader, made the normal-exit fixture flush output before exiting, and added spawn/job diagnostics. Run `43654011121` passed; run `43654339413` passed with an explicit TAP annotation: **58 tests, 58 passed, 0 failed, 0 skipped**.
 
 ## Acceptance matrix — Phase 6
 
@@ -353,7 +353,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 | Parent normal exit cleanup behavior | **PASS** | Full Ubuntu suite passed after fixture now explicitly exits after flushing PID output. |
 | Server SIGTERM while managed child active; shutdown deadline and DB/lock outcome | **PASS** | Full Ubuntu suite passed on run `43654011121` after manager wrapper and fake process fixes. |
 | Child calling `setsid()` / leaving managed process group | **PARTIAL** | Ubuntu test passed and explicitly verifies teardown, but a deliberately detached process remains outside the process-group kill guarantee by design. |
-| Symlink escape and cleanup protection on actual manager | **PARTIAL** | Whole Ubuntu suite passed; exact skip count has not yet been surfaced, so the symlink test's execution versus skip still needs confirmation. |
+| Symlink escape and cleanup protection on actual manager | **PASS** | Ubuntu run `43654339413` passed with zero skipped tests; the actual manager symlink/cleanup test ran. Windows remains skipped with `EPERM`. |
 | Full bootstrap, recovery-before-listen, second-instance lock, shutdown/restart | **PASS** | Full Ubuntu suite passed on run `43654011121`, including subprocess bootstrap and deadline tests. |
 | `/formats` route-specific rate limit | **PASS** | Fastify inject verifies threshold, 429 response, body, and headers on Windows. |
 | `POST /downloads` route-specific rate limit | **PASS** | Fastify inject verifies independent threshold, 429 response, body, and headers on Windows. |
@@ -361,7 +361,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 | Retention stress and repeated recovery | **PASS** | Temporary SQLite/storage fixture with 1,000 terminal jobs; active job and temporary artifact are retained; repeated recovery does not duplicate records. |
 | Manager lifecycle MP4 AAC copy, MKV, MP3 | **PASS** | Fake yt-dlp child + real manager, Fastify, SQLite, FFmpeg/FFprobe, and local generated fixtures on Windows. This does not prove compatibility with a production yt-dlp binary or YouTube source formats. |
 | Windows full test suite | **PASS** | 53 pass, 0 fail, 1 expected platform skip, 54 total. |
-| Ubuntu Linux workflow | **PASS** | Run `43654011121` on commit `4b5bacf` completed successfully. Exact pass/fail/skip totals are pending a success-summary annotation run. |
+| Ubuntu Linux workflow | **PASS** | Run `43654339413` on commit `7e86f47`: 58 pass, 0 fail, 0 skipped. Runner setup, Node 22, FFmpeg, `npm ci`, all-source syntax check, and full test suite passed. |
 
 ## Residual risk and release assessment
 
@@ -381,8 +381,8 @@ Get-ChildItem src -Recurse -File -Filter *.js | ForEach-Object { node --check $_
 npm test
 ```
 
-On GitHub, inspect [Linux CI run 43652204319](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43652204319) and the follow-up run after the fixture import correction. The workflow installs dependencies and media tools from the Ubuntu runner and runs the same syntax check and suite. Linux process-group, detached-child, full bootstrap and symlink claims remain unverified until a complete run passes and individual test results are reviewed.
+On GitHub, inspect [Linux CI run 43654339413](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43654339413). It passed the full Linux suite with zero skips; earlier failed runs remain documented as test-development findings. Linux detached-child behavior remains a documented boundary of process-group cancellation.
 
 ## GitHub Actions execution status
 
-The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Runs `43652204319` through `43653771115` exposed and helped close Linux-only test-fixture defects. Run `43654011121` on commit `4b5bacf` passed. Current code changes are on `codex/phase6-linux-ci`; a new run will publish exact Linux test totals via an annotation. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
+The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Runs `43652204319` through `43653771115` exposed and helped close Linux-only test-fixture defects. Ubuntu run `43654339413` on commit `7e86f47` passed: **58/58 tests, no skips**. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
