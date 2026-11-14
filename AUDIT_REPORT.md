@@ -382,3 +382,7 @@ npm test
 ```
 
 On GitHub, push the isolated branch and inspect **Actions → Linux CI** for that commit, or dispatch `Linux CI` manually. The workflow installs dependencies and media tools from the Ubuntu runner and runs the same syntax check and suite. Linux process-group, detached-child, full bootstrap and symlink claims remain unverified until that run completes and logs are reviewed.
+
+## GitHub Actions execution status
+
+The Phase 6 branch was committed locally in the isolated clone as `5e31282` (`codex/phase6-linux-ci`) and a push was attempted to the supplied SSH remote. GitHub rejected write access: `Permission to smkypm4xiirpl/ytdlp-api.git denied to ImmoDevs`. No alternate SSH identity/key was tried. Consequently, no GitHub Actions run exists and every Linux-only acceptance item above remains **NOT TESTED** (or **PARTIAL** where only the platform limitation was demonstrated). To unblock, grant the currently configured GitHub account `ImmoDevs` write access to that repository, or configure the intended authorized SSH identity locally; then push this branch and inspect the workflow run before changing these statuses.
