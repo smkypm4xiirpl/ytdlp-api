@@ -20,6 +20,8 @@ export class JobQueue {
     get size() { return this.#tasks.length; }
     get pending() { return this.#running; }
 
+    // Admission mutates the queue synchronously; task.run() is deferred to a
+    // microtask. Callers can publish corresponding state before work begins.
     add(run, { signal } = {}) {
         if (typeof run !== "function") return Promise.reject(new TypeError("task must be a function"));
         if (signal?.aborted) return Promise.reject(abortError(signal));

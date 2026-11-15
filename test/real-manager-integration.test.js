@@ -60,6 +60,7 @@ async function makeFixtures(){
 await makeFixtures();
 const API_KEY=process.env.API_KEY;
 let mode="copy";
+let downloaderRuns=0;
 const fakeYtdlp=path.join(root,"fake-ytdlp.js");
 process.env.PHASE5_FIXTURES=JSON.stringify(fixtures);
 process.env.PHASE5_FAKE_MODE=mode;
@@ -86,6 +87,10 @@ if (mode === 'hold') {
 `);
 function setMode(value) { mode=value; process.env.PHASE5_FAKE_MODE=value; }
 manager.setDownloadProcessRunner(({args,signal,onProgress})=>{
+ downloaderRuns++;
+ const outputTemplate=args[args.indexOf("--output")+1];
+ const jobId=path.basename(outputTemplate).split(".")[0];
+ if(!manager.listDownloads().some(job=>job.id===jobId)) return Promise.reject(Object.assign(new Error("worker observed job before Map publication"),{code:"FIXTURE_UNPUBLISHED_JOB"}));
  if(mode==="enospc-download") return Promise.reject(Object.assign(new Error("fixture full storage"),{code:"ENOSPC"}));
  return runYtDlpDownload({binary:execPath,args:[fakeYtdlp,"--",...args],signal,timeoutMs:10_000,onProgress});
 });
@@ -321,5 +326,142 @@ test("manager retention replays recovery and batch-cleans 1,000 terminal fixture
  await waitTerminal(activeId);
  await manager.cleanupExpiredDownloads(Date.now()+2*60*60*1000);
  assert.throws(()=>manager.getDownload(activeId),error=>error.code==="JOB_NOT_FOUND");
+ setMode("copy");
+});
+
+test("initial SQLite insert failure returns sanitized 503 without publishing or queueing a job",async()=>{
+ await resetFastifyRateWindows();
+ setMode("hold");
+ const db=new DatabaseSync(store.databasePath);
+ const beforeRows=store.listStoredJobs().length;
+ const beforeJobs=manager.listDownloads().map(job=>job.id).sort();
+ const beforeQueue=manager.getDownloadManagerDiagnostics();
+ const beforeRuns=downloaderRuns;
+ const oldConsoleError=console.error;
+ const capturedLogs=[];
+ console.error=(...values)=>capturedLogs.push(values.join(" "));
+ db.exec(`CREATE TRIGGER phase8_reject_initial BEFORE INSERT ON jobs BEGIN SELECT RAISE(ABORT,'phase8 private SQL and filesystem path'); END`);
+ try {
+  const response=await app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload:{url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mkv"}});
+  assert.equal(response.statusCode,503);
+  assert.deepEqual(response.json().error,{code:"JOB_PERSISTENCE_FAILED",message:"Job storage is temporarily unavailable"});
+  assert.equal(store.listStoredJobs().length,beforeRows,"failed INSERT leaves no SQLite row");
+  assert.deepEqual(manager.listDownloads().map(job=>job.id).sort(),beforeJobs,"failed create is absent from the Map/API");
+  assert.deepEqual(manager.getDownloadManagerDiagnostics(),beforeQueue,"no queue task is admitted");
+  assert.equal(downloaderRuns,beforeRuns,"no downloader is started");
+  assert.equal((await app.inject({method:"GET",url:"/api/v1/health"})).statusCode,200);
+  assert.doesNotMatch(response.body,/phase8 private|SQLITE|jobs\.sqlite|storage path/i);
+  assert.doesNotMatch(capturedLogs.join("\n"),/phase8 private|SQLITE_ERROR_MESSAGE|jobs\.sqlite|storage path/i);
+ } finally {
+  console.error=oldConsoleError;
+  db.exec("DROP TRIGGER IF EXISTS phase8_reject_initial");
+  db.close();
+  setMode("copy");
+ }
+});
+
+test("successful create persists before API publication and admits exactly one real queue task",async()=>{
+ await resetFastifyRateWindows();
+ setMode("hold");
+ const beforeRuns=downloaderRuns;
+ const beforeCount=manager.getDownloadManagerDiagnostics().jobCount;
+ const response=await app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload:{url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mkv"}});
+ assert.equal(response.statusCode,202);
+ const id=response.json().data.id;
+ assert.match(id,/^[0-9a-f-]{36}$/i);
+ const stored=store.getStoredJob(id);
+ assert.ok(stored);
+ assert.ok(["queued","downloading"].includes(stored.status));
+ assert.equal(manager.getDownload(id).id,id);
+ assert.equal(manager.getDownloadManagerDiagnostics().jobCount,beforeCount+1);
+ const detail=await app.inject({method:"GET",url:`/api/v1/downloads/${id}`,headers:auth});
+ assert.equal(detail.statusCode,200);
+ assert.equal(detail.json().data.id,id);
+ for(let i=0;i<100&&downloaderRuns===beforeRuns;i++) await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(downloaderRuns,beforeRuns+1,"one accepted queue task invokes one fake downloader");
+ assert.equal(manager.getDownload(id).status,"downloading");
+ const cancelled=await app.inject({method:"DELETE",url:`/api/v1/downloads/${id}`,headers:auth});
+ assert.equal(cancelled.statusCode,200);
+ assert.equal((await waitTerminal(id)).status,"cancelled");
+ setMode("copy");
+});
+
+test("two concurrent creates receive distinct durable jobs and exactly one execution each",async()=>{
+ await resetFastifyRateWindows();
+ setMode("hold");
+ const beforeRuns=downloaderRuns;
+ const payload={url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mkv"};
+ const responses=await Promise.all([1,2].map(()=>app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload})));
+ assert.deepEqual(responses.map(response=>response.statusCode),[202,202]);
+ const ids=responses.map(response=>response.json().data.id);
+ assert.equal(new Set(ids).size,2);
+ for(const id of ids){
+  assert.ok(store.getStoredJob(id));
+  assert.equal(manager.getDownload(id).id,id);
+ }
+ for(let i=0;i<100&&downloaderRuns<beforeRuns+2;i++) await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(downloaderRuns,beforeRuns+2);
+ await Promise.all(ids.map(id=>app.inject({method:"DELETE",url:`/api/v1/downloads/${id}`,headers:auth})));
+ for(const id of ids) assert.equal((await waitTerminal(id)).status,"cancelled");
+ setMode("copy");
+});
+
+test("queue admission failure compensates SQLite and keeps the job unpublished",async()=>{
+ await resetFastifyRateWindows();
+ setMode("hold");
+ let rejectedId;
+ const beforeQueue=manager.getDownloadManagerDiagnostics();
+ const beforeRuns=downloaderRuns;
+ manager.setQueueAdmissionForTests((_run,_options,job)=>{rejectedId=job.id;throw Object.assign(new Error("private SQL/path detail"),{code:"FIXTURE_QUEUE_FAILURE"});});
+ try {
+  const response=await app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload:{url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mkv"}});
+  assert.equal(response.statusCode,503);
+  assert.deepEqual(response.json().error,{code:"JOB_QUEUE_ADMISSION_FAILED",message:"Unable to schedule download job"});
+  assert.equal(store.getStoredJob(rejectedId),undefined,"compensating DELETE removes the initial row");
+  assert.throws(()=>manager.getDownload(rejectedId),error=>error.code==="JOB_NOT_FOUND");
+  assert.ok(!manager.listDownloads().some(job=>job.id===rejectedId));
+  assert.deepEqual(manager.getDownloadManagerDiagnostics(),beforeQueue);
+  assert.equal(downloaderRuns,beforeRuns);
+ } finally {
+  manager.setQueueAdmissionForTests();
+  setMode("copy");
+ }
+});
+
+test("failed queue rollback records safe residual and startup recovery interrupts queued row",async()=>{
+ await resetFastifyRateWindows();
+ setMode("hold");
+ const db=new DatabaseSync(store.databasePath);
+ let rejectedId;
+ const beforeQueue=manager.getDownloadManagerDiagnostics();
+ const beforeRuns=downloaderRuns;
+ const oldConsoleError=console.error;
+ const capturedLogs=[];
+ console.error=(...values)=>capturedLogs.push(values.join(" "));
+ db.exec(`
+  CREATE TRIGGER phase8_reject_delete BEFORE DELETE ON jobs BEGIN SELECT RAISE(ABORT,'private delete SQL'); END;
+  CREATE TRIGGER phase8_reject_failed BEFORE UPDATE OF status ON jobs WHEN NEW.status='failed' BEGIN SELECT RAISE(ABORT,'private update SQL'); END;
+ `);
+ manager.setQueueAdmissionForTests((_run,_options,job)=>{rejectedId=job.id;throw Object.assign(new Error("private queue detail"),{code:"FIXTURE_QUEUE_FAILURE"});});
+ try {
+  const response=await app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload:{url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mkv"}});
+  assert.equal(response.statusCode,503);
+  assert.equal(response.json().error.code,"JOB_QUEUE_ADMISSION_FAILED");
+  assert.equal(store.getStoredJob(rejectedId).status,"queued","both compensation writes fail, so SQLite retains the initial row");
+  assert.throws(()=>manager.getDownload(rejectedId),error=>error.code==="JOB_NOT_FOUND");
+  assert.deepEqual(manager.getDownloadManagerDiagnostics(),beforeQueue);
+  assert.equal(downloaderRuns,beforeRuns);
+  assert.doesNotMatch(response.body,/private|SQL|path|jobs\.sqlite/i);
+  assert.doesNotMatch(capturedLogs.join("\n"),/private delete SQL|private update SQL|private queue detail/);
+  assert.match(capturedLogs.join("\n"),/startup recovery will mark a remaining queued row interrupted/);
+ } finally {
+  manager.setQueueAdmissionForTests();
+  console.error=oldConsoleError;
+  db.exec("DROP TRIGGER IF EXISTS phase8_reject_delete; DROP TRIGGER IF EXISTS phase8_reject_failed");
+  db.close();
+ }
+ await manager.initializeDownloadManager();
+ assert.equal(manager.getDownload(rejectedId).status,"interrupted","startup recovery resolves the residual queued row");
+ assert.equal(store.getStoredJob(rejectedId).status,"interrupted");
  setMode("copy");
 });

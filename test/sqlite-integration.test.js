@@ -24,6 +24,17 @@ test("SQLite job store CRUD and simultaneous persistence on isolated database", 
  store.close();
 });
 
+test("initial create is insert-only and cannot overwrite a colliding job ID",async t=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),"ytdlp-create-only-")); t.after(()=>rm(dir,{recursive:true,force:true}));
+ const store=openSqliteJobStore(path.join(dir,"jobs.sqlite"));
+ try {
+  store.createJob(record("collision","queued"));
+  assert.throws(()=>store.createJob({...record("collision","completed"),fileName:"collision.mp4",fileSize:10}));
+  assert.equal(store.getStoredJob("collision").status,"queued");
+  assert.equal(store.getStoredJob("collision").fileName,null);
+ } finally { store.close(); }
+});
+
 test("SQLite rejects duplicate instance lock and stale lock is explicit", async t => {
  const dir=await mkdtemp(path.join(os.tmpdir(),"ytdlp-lock-")); t.after(()=>rm(dir,{recursive:true,force:true}));
  const db=path.join(dir,"jobs.sqlite"); const first=openSqliteJobStore(db);

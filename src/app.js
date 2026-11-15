@@ -18,6 +18,24 @@ export async function buildApp({ apiKey, manager, getVideoInfo, getVideoFormats,
     app.addHook("onRequest", createAuthentication(apiKey));
     app.setNotFoundHandler((_request, reply) => reply.code(404).send({ success: false, error: { code: "ROUTE_NOT_FOUND", message: "API endpoint not found" } }));
     app.setErrorHandler((error, request, reply) => {
+        if (error.code === "JOB_PERSISTENCE_FAILED" && error.statusCode === 503) {
+            return reply.code(503).send({
+                success: false,
+                error: { code: "JOB_PERSISTENCE_FAILED", message: "Job storage is temporarily unavailable" }
+            });
+        }
+        if (error.code === "JOB_QUEUE_ADMISSION_FAILED" && error.statusCode === 503) {
+            return reply.code(503).send({
+                success: false,
+                error: { code: "JOB_QUEUE_ADMISSION_FAILED", message: "Unable to schedule download job" }
+            });
+        }
+        if (error.code === "JOB_CREATION_FAILED" && error.statusCode === 503) {
+            return reply.code(503).send({
+                success: false,
+                error: { code: "JOB_CREATION_FAILED", message: "Unable to create download job" }
+            });
+        }
         if (error.statusCode === 429) {
             const full = error.code === "QUEUE_FULL";
             return reply.code(429).send({ success: false, error: { code: full ? "QUEUE_FULL" : "RATE_LIMITED", message: full ? error.message : "Too many requests" } });
@@ -25,7 +43,10 @@ export async function buildApp({ apiKey, manager, getVideoInfo, getVideoFormats,
         if (error.statusCode >= 400 && error.statusCode < 500) {
             return reply.code(error.statusCode).send({ success: false, error: { code: error.code || "REQUEST_ERROR", message: error.message } });
         }
-        request.log.error({ err: error }, "Request failed");
+        const errorCode = typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
+            ? error.code
+            : "INTERNAL_ERROR";
+        request.log.error({ errorCode }, "Request failed");
         return reply.code(500).send({ success: false, error: { code: "INTERNAL_ERROR", message: "An unexpected server error occurred" } });
     });
     await app.register(healthRoutes);

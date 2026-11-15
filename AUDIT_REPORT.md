@@ -331,7 +331,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 
 - Added `.github/workflows/ci-linux.yml`: triggers on push, pull request, and manual dispatch; Ubuntu 24.04; Node 22; `npm ci`; FFmpeg/FFprobe installation and path configuration; syntax validation for all `src/**/*.js`; `npm test`; 20-minute workflow timeout; read-only repository permission; no secrets or artifact upload.
 - Made synthetic media test binary paths configurable and Linux-aware while retaining the existing Windows path fallback. Production executable configuration is not changed by the test-only path selection.
-- Added Linux-only process group, full bootstrap/second-instance, active child shutdown, shutdown deadline, and detached-child-boundary integration coverage. Windows does not execute the Linux signal assertions; they remain unproven until the Ubuntu job runs.
+- Added Linux-only process group, full bootstrap/second-instance, active child shutdown, shutdown deadline, and detached-child-boundary integration coverage. At the time this Phase 6 entry was first drafted, Windows could not execute these assertions; the subsequent successful Ubuntu runs below closed that platform gap for the tested commit.
 - Moved the server subprocess fixture from `test/fixtures` to `test-support/` after the full test run found Node's default discovery tried to execute the fixture as a standalone test. This fixed a real suite-discovery failure without suppressing tests.
 - Added real-manager failure injection hooks for output rename and storage `statfs`; fixtures exercise ENOSPC, read-only/rename errors, low-space processing, oversized result, durable SQLite failure, and preservation/quarantine behavior.
 - Expanded manager lifecycle tests for AAC copy, MKV and MP3, TTL leases, symlink handling where supported, route-specific limits, retention, and repeated recovery.
@@ -365,7 +365,7 @@ Deployment/rollback **belum dijalankan**. Sebelum deploy: review perubahan file 
 
 ## Residual risk and release assessment
 
-- Until the Ubuntu workflow run is green and its logs confirm Linux-only process, bootstrap, and symlink cases executed, this phase remains **PARTIAL** and the release is **not production-ready**.
+- This residual note reflected the state before the successful Ubuntu runs recorded below. Runs `43654339413` and `43655063515` later passed with zero skipped tests; the latter tested the current HEAD. Phase 7 below gives the current release decision and remaining blockers.
 - A child that deliberately calls `setsid()` escapes the managed process group. Cleanup for that fixture is explicit; production policy must not claim containment of deliberately detached descendants without a stronger OS isolation mechanism.
 - CI fake downloader uses controlled local fixtures. It validates application argument construction and the manager pipeline, not network behavior, YouTube availability, cookies, or the production yt-dlp build.
 - Physical ENOSPC is represented by deterministic injected failures. Actual filesystem/device exhaustion behavior remains environment-dependent.
@@ -381,8 +381,175 @@ Get-ChildItem src -Recurse -File -Filter *.js | ForEach-Object { node --check $_
 npm test
 ```
 
-On GitHub, inspect [Linux CI run 43654339413](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43654339413). It passed the full Linux suite with zero skips; earlier failed runs remain documented as test-development findings. Linux detached-child behavior remains a documented boundary of process-group cancellation.
+On GitHub, inspect [Linux CI run 43654339413](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43654339413). It passed the full Linux suite with zero skips; earlier failed runs remain documented as test-development findings. The current HEAD was subsequently tested in [Linux CI run 43655063515](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43655063515), also with 58/58 tests and no skips. Linux detached-child behavior remains a documented boundary of process-group cancellation.
 
 ## GitHub Actions execution status
 
 The default SSH identity was `ImmoDevs`, which lacked write permission. The configured `github.com-rpl` alias uses `~/.ssh/rpl` and authenticated as `smkypm4xiirpl`. The isolated branch was pushed successfully. Runs `43652204319` through `43653771115` exposed and helped close Linux-only test-fixture defects. Ubuntu run `43654339413` on commit `7e86f47` passed: **58/58 tests, no skips**. Current push remote is `git@github.com-rpl:smkypm4xiirpl/ytdlp-api.git`.
+
+# PHASE 7 — Final Release Review
+
+Review date: 2026-11-15. This is a review-only phase on the isolated local clone. No source code, dependencies, secrets, production data, VPS, services, or remote repository state were changed. No deployment, restart, commit, or push was performed.
+
+## Branch, commit, and CI evidence
+
+- Branch: `codex/phase6-linux-ci`; HEAD: `e2d29b6884b983c0f207dd08e342405aa316e9c0` (`Record passing Linux CI and acceptance totals`). The working tree was clean before this documentation update.
+- The older Phase 6 run `43654339413` passed on `7e86f47`, which is not HEAD. However, a later successful run, [43655063515](https://github.com/smkypm4xiirpl/ytdlp-api/actions/runs/43655063515), ran the workflow present at HEAD on branch `codex/phase6-linux-ci`, commit prefix `e2d29b6` (full SHA matches HEAD), Ubuntu 24.04 / Node 22. Its workflow annotation reports 58 tests, 58 pass, 0 fail, 0 skipped. Thus Linux CI is not stale for the source/workflow under review; no rerun is required solely due to later source changes. The run page currently displays a warning that `actions/checkout@v4` and `actions/setup-node@v4` use a Node 20 action runtime that the runner forces to Node 24; the project runtime setup remains Node 22. This warning is not a project test failure.
+- The Phase 7 review changed documentation only. No source, workflow, dependency, or lockfile change followed the tested HEAD.
+
+## Verification performed on the reviewed checkout
+
+| Scope | Result | Evidence / limit |
+|---|---|---|
+| Windows full suite | **PASS with one platform skip** | `npm test`: 54 tests, 53 pass, 0 fail, 1 skip. Skip is the real-manager symlink fixture (`EPERM`). Linux-only assertions are behind a Linux platform guard and do not execute on Windows. |
+| Ubuntu GitHub Actions | **PASS** | Run 43655063515 tested this exact HEAD: 58 pass, 0 fail, 0 skipped. Linux process-group, bootstrap, and symlink coverage was executed there. |
+| Unit-style policy/validation/timeout helpers | **PASS** | Validation (4), media policy (1), timeout policy (1), and shutdown deadline helper (2) all passed in the full Windows run. |
+| API integration | **PASS** | 9 Fastify integration tests passed, including auth, validation, endpoints, rate limits, redaction, range responses, disconnect, and lease release. |
+| Queue integration | **PASS** | 6 queue tests passed across actual P-Queue behavior and the internal queue abstraction: capacity, concurrency, rejection, cancellation, and idle settlement. |
+| Process lifecycle | **PASS on Windows; PASS on Linux CI for Linux-specific cases** | Windows: fake process cancellation/tree (1), managed process (3), yt-dlp runner behavior (2), shutdown helper (2) passed. Exact Linux process-group/shutdown tests passed in run 43655063515. Deliberately detached descendants are outside the process-group guarantee. |
+| Media | **PASS for synthetic/local fixtures** | 5 FFmpeg/FFprobe synthetic tests plus 1 policy test passed; real-manager Fastify/SQLite fixture tests also passed for MP4/MKV/MP3. No YouTube network or production yt-dlp behavior was exercised. |
+| Filesystem / SQLite | **PASS with Windows symlink skip** | SQLite fixture integration (7), recovery (2), manager TTL/lease, failure injection, and retention cases passed. Manager symlink case skipped on Windows and ran in the successful Ubuntu suite. ENOSPC/read-only/rename paths are deterministic injected failures, not physical disk exhaustion. |
+| Syntax | **PASS** | `node --check` run for every JavaScript file under `src`, `test`, and `test-support`. |
+| Clean install | **PASS** | `npm ci` completed from the committed lockfile. Dependency tree: `@fastify/rate-limit@10.3.0`, `dotenv@16.6.1`, `fastify@5.12.8`, `p-queue@8.1.1`. |
+| Dependency audit | **PASS** | `npm audit --omit=dev` on 2026-11-15: 0 vulnerabilities. No dependency or lockfile changes. |
+| Diff checks | **PASS** | `git diff --check` and `git diff --cached --check` passed before Phase 7 documentation edits; rerun after edits is recorded below. |
+
+The exact `npm test` Windows output was `1..54`, `pass 53`, `fail 0`, `skipped 1`. Some test layers overlap; the categorized counts above are not intended to sum to the suite total. GitHub Actions run 43655063515 reports the Linux total separately as 58/58.
+
+## Security, configuration, and compatibility review
+
+- Authentication uses `x-api-key` and supported Bearer form; health is public while the other API routes are authenticated. Tests cover missing, incorrect, malformed, and accepted test credentials, and log redaction. The checked-in workflow and tests use no GitHub secrets. No secret contents were read or added to this report.
+- URL validation restricts supported YouTube hosts and single-video URL forms, rejects credentials, custom ports, fragments, playlist/extra query parameters, and malformed IDs. yt-dlp/FFmpeg launch uses argument arrays with `shell:false`; executable output, media type, stored path, and file size are checked. File streaming enforces a job UUID and manager-owned resolved path, supports one byte range, and holds a lease during transfer. Symlink escape and cleanup behavior ran on Ubuntu CI.
+- Global and route-specific limits exist; `/info`, `/formats`, and `POST /downloads` have independent limits. Their 429 behavior and headers are covered. Health remains public. Request validation and error handling avoid returning child stack traces or filesystem paths. CORS is not enabled; no browser cross-origin use is part of the stated API contract.
+- Managed subprocesses use `shell:false`, bounded output, timeouts, abort handling, TERM/KILL escalation, and Linux process groups. A descendant that deliberately invokes `setsid()` can leave the group and is not guaranteed to be stopped. The test explicitly cleans its detached fixture; no stronger OS sandbox is implemented.
+- Recovery validates actual media with FFprobe, format/container/codec policy, size, and regular-file checks before completion. MP4 policy requires H.264, AAC-LC when audio exists, preserves audio tracks, and uses faststart. MKV/MP3 synthetic lifecycle output passed. This does not prove every production yt-dlp selector/source combination.
+- Queue cancellation removes waiting tasks in the application queue; running slots remain occupied until the work settles. SQLite uses an exclusive lock, WAL, bounded busy timeout, error propagation, and recovery. Stale lock removal is intentionally an operator decision after PID/ownership verification.
+- Environment requirements inspected from source and safe project files only: Node 22-compatible runtime, default port 3100, configurable host and executable paths, `STORAGE_PATH`, database/storage/log locations, duration/file/queue limits, timeout bounds, and required configuration validation. No actual `.env` values were inspected. CI and local runtime passed on Node 22. The known VPS runtime `v22.23.3` is the same major runtime but was not tested on the VPS. No database schema migration was identified in this review; SQLite creates/uses the `jobs` table and index.
+- **P2 compatibility mismatch:** `package.json` declares `engines.node >=20`, but source imports `node:sqlite`; official Node documentation records that built-in module as added in v22.5.0. Thus Node 20 is not actually supported by this implementation despite package metadata. The stated VPS Node 22.23.3 is compatible; declare a Node 22 minimum in a separately approved code change before claiming Node 20 compatibility. [Node.js SQLite documentation](https://nodejs.org/api/sqlite.html#sqlite).
+- Runtime dependencies are all used by the app. `npm audit --omit=dev` found no current production advisories. No upgrade was made; the lockfile remains authoritative.
+
+## New findings and residual risk
+
+### P1 — Failed initial durable save leaves a ghost in-memory job
+
+In `src/services/download-manager.js`, `createDownload()` inserts the newly queued job into `jobs` before calling `persistJob(job, { required: true })` (current reviewed lines 636–637). If SQLite rejects that first save, the Map entry is not removed and the task is never added to the queue. The ghost can appear in `GET /downloads`, remain in `queued` indefinitely, and is not represented durably. Fastify's error handler also converts the manager's `JOB_PERSISTENCE_FAILED` 503 into generic `INTERNAL_ERROR`/500 because it forwards only 4xx statuses. Existing tests prove SQLite save errors propagate and prove a later completed-write failure is contained, but do not exercise this exact manager-level initial-save failure. This is a data/state integrity blocker; fix by persisting before publishing to the Map or rolling back the Map entry on failure, then add manager+Fastify+SQLite failure-injection coverage. No source fix was made in this review-only phase.
+
+### P2 — Declared Node engine range is broader than required runtime
+
+`engines.node >=20` conflicts with the `node:sqlite` dependency introduced in Node 22.5. It does not block the known Node 22 VPS target, but it can cause unsupported Node 20 installs to appear valid.
+
+### Accepted / unclosed operational risks
+
+- The API is currently reachable over public HTTP according to the supplied deployment context. API keys and response data can be observed or altered by a network-path observer. User acceptance of HTTP temporarily does not remove that exposure. Without changing the friend-owned Nginx/TLS/firewall services, practical mitigations are to limit callers to trusted networks where already possible, avoid sending credentials over public paths, and use an SSH tunnel for operator-only access when SSH access is separately authorized. These mitigations are not claimed as applied.
+- Process-group cancellation cannot guarantee termination of a child that intentionally detaches with `setsid()` or equivalent. It needs explicit fixture cleanup; no broad-kill is used.
+- Fake yt-dlp and generated media prove the application's pipeline/arguments/validation under controlled inputs, not YouTube availability, cookies, production yt-dlp binary behavior, or live format selection. No YouTube download was performed.
+- ENOSPC/read-only/rename failures are injected deterministically. Physical storage exhaustion, device-level failures, sustained VPS throughput, and actual production free-space behavior remain unmeasured.
+- CI success is evidence for commit `e2d29b6884b983c0f207dd08e342405aa316e9c0`, not proof of production environment, secrets, executable paths, actual storage mount, or service integration.
+- Tmux itself is not a supervisor for machine reboot and does not guarantee automatic restart after host failure. Stale lock after forced termination requires manual owner verification; never remove it automatically.
+
+## Final acceptance matrix
+
+| Criterion | Status | Evidence / limitation |
+|---|---|---|
+| Reviewed branch/commit matches passing Linux CI | **PASS** | HEAD is `e2d29b6884b983c0f207dd08e342405aa316e9c0`; run 43655063515 is successful on this exact commit/workflow. |
+| Windows full suite | **PASS** | 53 pass, 0 fail, 1 symlink permission skip out of 54 tests. |
+| Ubuntu Linux full suite | **PASS** | Exact-HEAD run: 58 pass, 0 fail, 0 skip. |
+| Unit-style validation/policy/timeout helpers | **PASS** | 8 assertions groups/test cases as described above; all pass. |
+| Fastify/API integration | **PASS** | 9 tests pass; dummy credentials only. |
+| Queue integration and cancellation | **PASS** | 6 tests pass; no stranded waiter in application queue tests. |
+| Process lifecycle and Linux group shutdown | **PASS** | Linux CI proves owned process group/shutdown cases. Detached child remains explicitly outside guarantee. |
+| Synthetic media and real-manager format lifecycle | **PASS** | Local synthetic media/fake downloader only; no production yt-dlp or live source proof. |
+| Filesystem and SQLite fixtures | **PASS** | Manager/SQLite/recovery paths pass; physical ENOSPC not tested; Windows symlink test skips but Linux symlink test passes. |
+| Authentication, redaction, rate limits, ranges | **PASS** | Fastify integration with dummy secrets; no production key used. |
+| Dependency audit | **PASS** | 0 production vulnerabilities on 2026-11-15. |
+| Durable state when first job save fails | **FAIL** | Ghost in-memory queued job is possible; exact failure path has not been covered by a manager-level test. |
+| Node 20 package-engine claim | **PARTIAL** | Known target Node 22 is compatible; package metadata incorrectly allows Node 20 despite `node:sqlite`. |
+| Production HTTP confidentiality | **PARTIAL** | User accepts HTTP temporarily, but API key confidentiality is not protected on a public network path. |
+| Production yt-dlp/YouTube and physical storage behavior | **NOT TESTED** | Deliberately excluded from local/CI tests. |
+| Deployment and rollback runbook | **PASS — written only** | Detailed procedure is in `RELEASE_REVIEW.md`; no step was executed. Owner approval and backups remain prerequisites. |
+
+## Decision
+
+**NO-GO.** Do not advance this commit to deployment review yet. Linux CI and the broader test matrix are strong, but the confirmed P1 initial-persistence failure can leave an API-visible queued job that has no queue task and no SQLite row. Close that state-integrity bug and add a failing-save integration test before requesting another release review. Also correct the Node engine metadata in an approved implementation change. This decision is review-only; no deployment or restart was attempted.
+
+`RELEASE_REVIEW.md` contains the operator summary and a written, unexecuted deployment/rollback runbook. All runbook steps require explicit approval from the VPS owner and must be performed by an authorized operator; this phase did not contact or access the VPS.
+
+# PHASE 8 — Job Creation Atomicity & Persistence Error Handling
+
+Date: 2026-11-15. Work was limited to the isolated Phase 6 clone on branch `codex/phase6-linux-ci`, based at HEAD `e2d29b6884b983c0f207dd08e342405aa316e9c0`. At start, the working tree already contained the Phase 7 documentation changes (`AUDIT_REPORT.md` modified and `RELEASE_REVIEW.md` untracked); those were preserved. No checkout/reset/stash/clean, commit, push, VPS access, deployment, or restart was performed. No `.env`, cookies, production database, logs, API key, or downloads were read or changed.
+
+## Root cause and implementation
+
+- **P1 fixed locally:** `createDownload()` previously inserted into the in-memory `jobs` Map before required SQLite persistence. A failed insert returned an error but left a queued-looking job that had no durable row and no queue task.
+- `src/services/sqlite-store-core.js` now offers `createJob()` using a plain prepared `INSERT`, separate from the existing upsert `saveJob()`. This makes initial creation atomic and ensures a UUID collision cannot overwrite another row. A failing SQLite statement leaves no partial row.
+- `src/services/job-store.js` exposes the new operation as `createStoredJob()`.
+- `src/services/download-manager.js` now creates a temporary job and durably inserts it first. The synchronous `JobQueue.add()` admission follows. The queue defers `run()` to a microtask, so after admission the manager publishes the Map entry in the same JavaScript turn before any worker can observe it. There is no `await` between queue capacity check, initial insert, admission, and publication; concurrent request handlers cannot interleave those steps in the event loop.
+- If initial INSERT fails, no Map entry or task has been made. The manager throws a sanitized `JOB_PERSISTENCE_FAILED`/503 error and logs only a safe SQLite error code, not SQL, path, or error message.
+- If synchronous queue admission fails after persistence, the manager never publishes to the Map. It attempts a durable DELETE. If DELETE fails, it attempts a compensating `failed` update. If both fail, it logs the job UUID and safe error codes only; any residual durable `queued` row is not API-visible and existing startup recovery transitions it to `interrupted`. This residual path is tested. The recovery rule is retained rather than deleting or hiding an uncertain durable record.
+- A Map publication exception after queue admission aborts the task, suppresses its rejected promise, and runs the same compensation path. Because the actual queue executes work on a later microtask, abort happens before worker processing can begin in this synchronous failure path.
+- Concurrent create requests and create-only ID collision are tested. SQLite's single synchronous insert and the queue's synchronous admission prevent interleaving within create; `INSERT` rejects duplicate IDs instead of upserting.
+- `src/services/job-queue.js` documents its synchronous-admission/deferred-run contract. `getDownloadManagerDiagnostics()` and `setQueueAdmissionForTests()` provide internal observability/failure injection; they are not API routes.
+
+## HTTP error mapping
+
+- Previously, the manager's `AppError` with `statusCode: 503` and `JOB_PERSISTENCE_FAILED` fell through `src/app.js` to the generic 500 handler.
+- The error handler now maps only the known job persistence, queue-admission, and job-publication service errors to fixed safe 503 responses. Other unknown 5xx errors remain HTTP 500 `INTERNAL_ERROR` with a generic message.
+- Generic 5xx logs now include only a validated error code, not an error object/stack/cause. Manager persistence logs include only the job UUID and safe error code. Tests verify that SQL/path fixture strings do not appear in API responses or captured logs.
+
+## Node.js minimum audit
+
+`node:sqlite` / `DatabaseSync` was added in Node 22.5.0, but this application reads `database.isOpen` in `src/services/sqlite-store-core.js`; Node's v22.23.3 documentation lists `DatabaseSync.isOpen` as added in v22.15.0. `fs.statfs` used by the manager predates that floor. The accurate minimum for the currently used APIs is therefore **Node >=22.15.0**. [Node.js v22.23.3 SQLite API history](https://nodejs.org/download/release/v22.23.3/docs/api/sqlite.html#databaseisopen) documents the property version.
+
+- `package.json` and the root package metadata in `package-lock.json` now state `>=22.15.0`; dependency lock versions were not upgraded.
+- `src/runtime-requirements.js` provides a startup check. `src/server.js` calls it before dynamic imports of config, SQLite, and the manager, so older Node versions receive the explicit minimum-version message before the application opens storage or reads runtime secrets.
+- The GitHub workflow continues to use Node 22 on Ubuntu 24.04. Local Windows Node is v22.15.1; known VPS Node v22.23.3 is above the minimum. No VPS version/path/config was checked.
+
+## Added/updated tests and actual results
+
+### Targeted Phase 8 tests
+
+- `node --test test/real-manager-integration.test.js test/fastify-integration.test.js` (rerun after the final worker-order and log-redaction assertions): **25 tests, 24 pass, 0 fail, 1 skip**. The skip is the existing symlink test blocked by Windows `EPERM`. New runtime integration cases prove initial SQLite failure, successful creation with a held fake downloader, two concurrent creations with exactly one execution each, queue-admission compensation, and double compensation failure followed by interrupted recovery.
+- `node --test test/fastify-integration.test.js test/sqlite-integration.test.js test/runtime-requirements.test.js`: **19 tests, 19 pass, 0 fail, 0 skip**. Includes unknown 503→generic 500, safe error response, SQLite create-only ID collision protection, and version floor behavior.
+
+### Full Windows verification
+
+- `npm ci`: **PASS**, 55 packages added / 56 audited, 0 vulnerabilities. No dependency version upgrade.
+- Syntax check for all JavaScript under `src`, `test`, and `test-support`: **PASS**, 39 files.
+- `npm test`: **62 tests, 61 pass, 0 fail, 1 skip**. The skipped test is symlink creation on Windows (`EPERM`). Linux-only tests remain behind Linux platform guards and are not counted as Windows behavioral proof.
+- `git diff --check` and `git diff --cached --check`: **PASS** after final edits. Manual trailing-whitespace scan of both Markdown documents: **PASS**.
+- The targeted Phase 8 tests were run separately as listed above; the full suite was run after `npm ci`.
+
+### Linux CI
+
+**NOT TESTED for Phase 8.** Passing run `43655063515` tested Phase 7 commit `e2d29b6884b983c0f207dd08e342405aa316e9c0`; it does not prove this local Phase 8 patch. No push was performed, so a workflow run for the new source is unavailable. Linux CI must be run on an authorized commit containing this patch before release review can pass.
+
+## Phase 8 acceptance matrix
+
+| Criterion | Status | Evidence / residual |
+|---|---|---|
+| Initial SQLite failure returns 503 `JOB_PERSISTENCE_FAILED` | **PASS — Windows** | Real Fastify + manager + SQLite trigger. Safe message; no SQL/path leaked. |
+| No Map publication, queue task, SQLite row, or downloader after failed initial insert | **PASS — Windows** | Map/list and queue diagnostics unchanged, row count unchanged, fake runner call count unchanged, health still 200. |
+| Successful creation durable before API exposure | **PASS — Windows** | Initial durable row, valid ID, Map/detail visibility, one real JobQueue task and one held fake downloader. |
+| Queue admission failure compensation | **PASS — Windows** | Injected sync admission failure deletes SQLite row; no Map/queue/task/process remains; stable safe 503. |
+| Compensation delete and update both fail | **PASS — Windows** | Row remains durable but unpublished; safe residual log; startup recovery changes it from `queued` to `interrupted`. |
+| Concurrent create requests and duplicate ID protection | **PASS — Windows** | Two simultaneous requests produce distinct durable IDs and one execution each; SQLite create-only operation rejects collision without overwriting the original row. |
+| Recognized persistence error status/code/message | **PASS — Windows** | HTTP 503 with `JOB_PERSISTENCE_FAILED` and fixed safe message. |
+| Unknown errors stay generic 500 | **PASS — Windows** | HTTP 500 `INTERNAL_ERROR`; test SQL/path details absent from response. |
+| Minimum Node metadata and startup guard | **PASS — Windows** | Node >=22.15.0 in package and root lock metadata; unit tests reject 22.14 and accept 22.15.0/22.23.3; startup guard runs before config/store imports. |
+| Full Windows regression suite | **PASS** | 61 pass, 0 fail, 1 platform skip, 62 total. |
+| Linux CI for Phase 8 patch | **NOT TESTED** | Must run against a commit containing the Phase 8 patch; no push/commit was made. |
+| Public HTTP confidentiality / detached descendants / real YouTube / physical ENOSPC | **NOT TESTED / residual** | Unchanged and outside this phase; Phase 7 risks remain. |
+
+## Files changed in Phase 8
+
+- Modified: `src/services/sqlite-store-core.js`, `src/services/job-store.js`, `src/services/download-manager.js`, `src/services/job-queue.js`, `src/app.js`, `src/server.js`, `package.json`, `package-lock.json`, `test/real-manager-integration.test.js`, `test/fastify-integration.test.js`, `test/sqlite-integration.test.js`, `AUDIT_REPORT.md`, `RELEASE_REVIEW.md`.
+- Added: `src/runtime-requirements.js`, `test/runtime-requirements.test.js`.
+- No other prior changes, backups, staging, `.env`, cookies, database, storage, logs, or user files were removed or reset.
+
+## Residual risk and decision
+
+- The create/initial persistence P1 is fixed and its specified local Windows integration paths pass. The queue rollback double-failure case intentionally may leave a durable `queued` row until startup; it is not exposed in memory and recovery converts it to `interrupted`. The safe diagnostic log is the only immediate signal if both compensation operations fail.
+- The HTTP public API key exposure remains; this phase made no TLS/infrastructure changes. Process-group cancellation still cannot guarantee a deliberately detached descendant is stopped. Tests still use fake yt-dlp and synthetic media, and physical disk exhaustion is not tested.
+- No Linux run covers the changed Phase 8 source. The previous Phase 7 Linux run cannot be reused as proof.
+
+**Release decision remains NO-GO pending Linux CI on the Phase 8 patch and a new review.** No deployment, restart, commit, push, or VPS access occurred.

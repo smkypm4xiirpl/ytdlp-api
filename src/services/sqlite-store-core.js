@@ -39,6 +39,7 @@ export function openSqliteJobStore(databasePath, { lock = true, lockPath = `${da
         status=excluded.status, progress=excluded.progress, downloaded_bytes=excluded.downloaded_bytes,
         total_bytes=excluded.total_bytes, speed=excluded.speed, eta=excluded.eta, file_name=excluded.file_name,
         file_size=excluded.file_size, error_json=excluded.error_json, started_at=excluded.started_at, completed_at=excluded.completed_at`);
+    const create = db.prepare(`INSERT INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const get = db.prepare("SELECT * FROM jobs WHERE id=?");
     const list = db.prepare("SELECT * FROM jobs ORDER BY created_at DESC");
     const remove = db.prepare("DELETE FROM jobs WHERE id=?");
@@ -55,12 +56,15 @@ export function openSqliteJobStore(databasePath, { lock = true, lockPath = `${da
             error, createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at };
     };
 
+    const bindJob = (statement, job) => statement.run(job.id, job.videoId, job.formatId, job.output, job.status, job.progress ?? 0,
+        job.downloadedBytes ?? null, job.totalBytes ?? null, job.speed ?? null, job.eta ?? null,
+        job.fileName ?? null, job.fileSize ?? null, job.error ? JSON.stringify(job.error) : null,
+        job.createdAt, job.startedAt ?? null, job.completedAt ?? null);
+
     return {
         database: db,
-        saveJob(job) { save.run(job.id, job.videoId, job.formatId, job.output, job.status, job.progress ?? 0,
-            job.downloadedBytes ?? null, job.totalBytes ?? null, job.speed ?? null, job.eta ?? null,
-            job.fileName ?? null, job.fileSize ?? null, job.error ? JSON.stringify(job.error) : null,
-            job.createdAt, job.startedAt ?? null, job.completedAt ?? null); },
+        createJob(job) { bindJob(create, job); },
+        saveJob(job) { bindJob(save, job); },
         getStoredJob(id) { return decode(get.get(id)); },
         listStoredJobs() { return list.all().map(decode); },
         deleteStoredJob(id) { remove.run(id); },

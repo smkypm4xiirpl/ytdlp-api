@@ -20,13 +20,13 @@ async function makeApp(t, opts={}) {
     await writeFile(filePath, Buffer.from("0123456789"));
     let releaseCount=0;
     const manager = {
-        createDownload: () => { if(opts.queueFull) throw new AppError("queue full",429,"QUEUE_FULL"); return fakeJob; },
+        createDownload: () => { if(opts.queueFull) throw new AppError("queue full",429,"QUEUE_FULL"); if(opts.createError) throw opts.createError; return fakeJob; },
         listDownloads: () => [fakeJob],
         getDownload: jobId => { if(jobId!==id) throw new AppError("missing",404,"JOB_NOT_FOUND"); return fakeJob; },
         cancelDownload: () => ({...fakeJob,status:"cancelled"}),
         acquireDownloadFile: async jobId => { if(jobId!==id) throw new AppError("missing",404,"JOB_NOT_FOUND"); return {filePath,fileName:`${id}.mp4`,fileSize:10,release(){releaseCount++;}}; }
     };
-    const app=await buildApp({apiKey:KEY,manager,getVideoInfo:async()=>({id:"abcdefghijk"}),getVideoFormats:async()=>({formats:{video:[],audio:[]}}),globalRateLimit:opts.globalRateLimit??120});
+    const app=await buildApp({apiKey:KEY,manager,getVideoInfo:async()=>({id:"abcdefghijk"}),getVideoFormats:async()=>({formats:{video:[],audio:[]}}),globalRateLimit:opts.globalRateLimit??120,...(opts.loggerInstance?{loggerInstance:opts.loggerInstance}:{})});
     t.after(()=>app.close());
     return {app,manager,getReleaseCount:()=>releaseCount};
 }
@@ -150,4 +150,16 @@ test("Fastify request logs redact dummy API key and bearer token", async t=>{
  await app.inject({method:"GET",url:"/api/v1/downloads",headers:{authorization:`Bearer ${KEY}`}});
  await new Promise(resolve=>setTimeout(resolve,20));
  assert.equal(logs.includes(KEY),false);
+});
+
+test("unknown internal errors remain generic 500 and do not expose SQL or filesystem details",async t=>{
+ let logs="";
+ const sink=new Writable({write(chunk,_encoding,callback){logs+=chunk.toString();callback();}});
+ const loggerInstance=pino({level:"info"},sink);
+ const {app}=await makeApp(t,{loggerInstance,createError:Object.assign(new Error("private SQL at D:/private/jobs.sqlite"),{statusCode:503,code:"SQLITE_INTERNAL_DETAIL"})});
+ const response=await app.inject({method:"POST",url:"/api/v1/downloads",headers:{...auth,"content-type":"application/json"},payload:{url:"https://youtube.com/watch?v=abcdefghijk",formatId:"18",output:"mp4"}});
+ assert.equal(response.statusCode,500);
+ assert.deepEqual(response.json(),{success:false,error:{code:"INTERNAL_ERROR",message:"An unexpected server error occurred"}});
+ assert.doesNotMatch(response.body,/private|SQL|jobs\.sqlite|D:\\/i);
+ assert.doesNotMatch(logs,/private SQL|jobs\.sqlite|D:\\/i);
 });

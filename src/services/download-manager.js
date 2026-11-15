@@ -12,6 +12,7 @@ import { assertMp4VideoCompatible, verifyMediaOutput } from "./media-policy.js";
 import { runYtDlpDownload, downloadTimeoutMs } from "./download-process.js";
 import { recoverDownloadJobs } from "./recovery.js";
 import {
+    createStoredJob,
     saveJob,
     listStoredJobs,
     deleteStoredJob
@@ -24,6 +25,7 @@ let downloadProcessRunner = runYtDlpDownload;
 let mediaProcessRunner = runManagedProcess;
 let outputRenamer = (source, destination) => fs.rename(source, destination);
 let storageStats = (storagePath) => fs.statfs(storagePath);
+let queueAdmission = (run, options) => queue.add(run, options);
 
 // Injectable process boundary for isolated integration tests. Production defaults
 // to the real managed yt-dlp runner; this is not exposed through the API.
@@ -42,12 +44,63 @@ export function setDownloadFileSystemHooks({ renameOutput, statfs } = {}) {
     storageStats = statfs ?? ((storagePath) => fs.statfs(storagePath));
 }
 
+// Test seam for the synchronous queue-admission boundary. Production uses the
+// actual JobQueue; an injected thrown error must happen before delegating/addition.
+export function setQueueAdmissionForTests(admit) {
+    if (admit === undefined) {
+        queueAdmission = (run, options) => queue.add(run, options);
+        return;
+    }
+    if (typeof admit !== "function") throw new TypeError("admit must be a function");
+    queueAdmission = admit;
+}
+
+export function getDownloadManagerDiagnostics() {
+    return { jobCount: jobs.size, queuedTasks: queue.size, activeTasks: queue.pending };
+}
+
+function safeStoreErrorCode(error) {
+    return typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
+        ? error.code
+        : "SQLITE_ERROR";
+}
+
+function safeQueueErrorCode(error) {
+    return typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
+        ? error.code
+        : "QUEUE_ERROR";
+}
+
+function rollbackUnqueuedJob(job) {
+    jobs.delete(job.id);
+    job.queuePending = false;
+    try {
+        deleteStoredJob(job.id);
+        return;
+    } catch (deleteError) {
+        console.error(`Unable to delete unqueued job ${job.id} (${safeStoreErrorCode(deleteError)})`);
+    }
+
+    const failedJob = {
+        ...job,
+        status: "failed",
+        error: { code: "JOB_QUEUE_ADMISSION_FAILED", message: "Unable to schedule download job" },
+        completedAt: new Date().toISOString()
+    };
+    try {
+        saveJob(failedJob);
+        Object.assign(job, failedJob);
+    } catch (updateError) {
+        console.error(`Unable to persist terminal state for unqueued job ${job.id} (${safeStoreErrorCode(updateError)}); startup recovery will mark a remaining queued row interrupted`);
+    }
+}
+
 function persistJob(job, { required = false } = {}) {
     try {
         saveJob(job);
         return true;
     } catch (error) {
-        console.error(`Failed to persist download job ${job.id}:`, error.message);
+        console.error(`Failed to persist download job ${job.id} (${safeStoreErrorCode(error)})`);
         if (required) throw new AppError("Unable to persist download job", 503, "JOB_PERSISTENCE_FAILED");
         return false;
     }
@@ -633,15 +686,38 @@ export function createDownload(input) {
         abortController: new AbortController()
     };
 
-    jobs.set(id, job);
-    persistJob(job, { required: true });
+    // SQLite's single INSERT is atomic and intentionally does not upsert: an
+    // improbable UUID collision must never overwrite an existing job. Nothing
+    // is published to the Map/API or queue until this durable insert succeeds.
+    try {
+        createStoredJob(job);
+    } catch (error) {
+        console.error(`Failed to create download job ${id} (${safeStoreErrorCode(error)})`);
+        throw new AppError("Job storage is temporarily unavailable", 503, "JOB_PERSISTENCE_FAILED");
+    }
+
     job.queuePending = true;
-    const task = queue.add(
-        () => executeDownload(job),
-        {
-            signal: job.abortController.signal
-        }
-    );
+    let task;
+    try {
+        // JobQueue admits synchronously and defers task.run() to a microtask.
+        // The Map publication below therefore happens before any worker can
+        // observe this job. If admission throws, the durable row is compensated.
+        task = queueAdmission(() => executeDownload(job), { signal: job.abortController.signal }, job);
+        if (!task || typeof task.then !== "function") throw new TypeError("Queue admission did not return a task promise");
+    } catch (error) {
+        console.error(`Queue admission failed for job ${id} (${safeQueueErrorCode(error)})`);
+        rollbackUnqueuedJob(job);
+        throw new AppError("Unable to schedule download job", 503, "JOB_QUEUE_ADMISSION_FAILED");
+    }
+
+    try {
+        jobs.set(id, job);
+    } catch {
+        job.abortController.abort();
+        task.catch(() => {});
+        rollbackUnqueuedJob(job);
+        throw new AppError("Unable to create download job", 503, "JOB_CREATION_FAILED");
+    }
 
     task.catch((error) => {
         if (job.abortController.signal.aborted) {
