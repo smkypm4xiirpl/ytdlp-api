@@ -26,12 +26,44 @@ async function makeApp(t, opts={}) {
         cancelDownload: () => ({...fakeJob,status:"cancelled"}),
         acquireDownloadFile: async jobId => { if(jobId!==id) throw new AppError("missing",404,"JOB_NOT_FOUND"); return {filePath,fileName:`${id}.mp4`,fileSize:10,release(){releaseCount++;}}; }
     };
-    const app=await buildApp({apiKey:KEY,manager,getVideoInfo:async()=>({id:"abcdefghijk"}),getVideoFormats:async()=>({formats:{video:[],audio:[]}}),globalRateLimit:opts.globalRateLimit??120,...(opts.loggerInstance?{loggerInstance:opts.loggerInstance}:{})});
+    const app=await buildApp({apiKey:KEY,corsAllowedOrigins:opts.corsAllowedOrigins??[],manager,getVideoInfo:async()=>({id:"abcdefghijk"}),getVideoFormats:async()=>({formats:{video:[],audio:[]}}),globalRateLimit:opts.globalRateLimit??120,...(opts.loggerInstance?{loggerInstance:opts.loggerInstance}:{})});
     t.after(()=>app.close());
     return {app,manager,getReleaseCount:()=>releaseCount};
 }
 
 const auth = {"x-api-key":KEY};
+
+test("CORS allows configured localhost origin and its preflight only", async t=>{
+ const allowedOrigin="http://127.0.0.1:5500";
+ const blockedOrigin="http://evil.example";
+ const {app}=await makeApp(t,{corsAllowedOrigins:[allowedOrigin]});
+
+ const preflight=await app.inject({method:"OPTIONS",url:"/api/v1/downloads",headers:{
+  origin:allowedOrigin,
+  "access-control-request-method":"POST",
+  "access-control-request-headers":"content-type,x-api-key"
+ }});
+ assert.equal(preflight.statusCode,204);
+ assert.equal(preflight.headers["access-control-allow-origin"],allowedOrigin);
+ assert.match(preflight.headers["access-control-allow-methods"],/POST/);
+ assert.match(preflight.headers["access-control-allow-headers"],/x-api-key/i);
+ assert.equal(preflight.headers["access-control-allow-credentials"],undefined);
+
+ const allowed=await app.inject({method:"GET",url:"/api/v1/downloads",headers:{origin:allowedOrigin,...auth}});
+ assert.equal(allowed.statusCode,200);
+ assert.equal(allowed.headers["access-control-allow-origin"],allowedOrigin);
+
+ const blocked=await app.inject({method:"GET",url:"/api/v1/downloads",headers:{origin:blockedOrigin,...auth}});
+ assert.equal(blocked.statusCode,200);
+ assert.equal(blocked.headers["access-control-allow-origin"],undefined);
+});
+
+test("CORS stays disabled by default", async t=>{
+ const {app}=await makeApp(t);
+ const response=await app.inject({method:"GET",url:"/api/v1/health",headers:{origin:"http://127.0.0.1:5500"}});
+ assert.equal(response.statusCode,200);
+ assert.equal(response.headers["access-control-allow-origin"],undefined);
+});
 
 test("Fastify API health/auth/info/formats/download CRUD and schema errors", async t=>{
  const {app}=await makeApp(t);

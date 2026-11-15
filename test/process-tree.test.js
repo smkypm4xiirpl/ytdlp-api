@@ -26,7 +26,7 @@ if (process.platform === "linux") {
    const stat=await readFile(`/proc/${pid}/stat`,"utf8");
    const state=stat.match(/^\d+ \(.*\) ([A-Z])/s)?.[1];
    return state!=="Z";
-  } catch(error) { if(error.code==="ENOENT") return false; throw error; }
+  } catch(error) { if(error.code==="ENOENT"||error.code==="ESRCH") return false; throw error; }
  }
  async function waitStopped(pids) {
   for(let i=0;i<100;i++) {
