@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>YT-DLP • Download desk</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="YT-DLP home">
+        <span class="brand-mark">▶</span><span>yt<span class="brand-accent">.</span>desk</span>
+      </a>
+      <div class="topbar-right">
+        <span id="api-status" class="status-pill status-checking"><i></i><span>Checking API</span></span>
+        <span id="api-latency" class="latency">—</span>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> PERSONAL DOWNLOAD CONSOLE</div>
+        <h1>Bring a video.<br><span>Get your file.</span></h1>
+        <p class="hero-copy">Inspect formats, queue a job, watch progress, and retrieve the finished media from your YT-DLP API.</p>
+      </section>
+
+      <aside id="http-warning" class="notice notice-warning" hidden>
+        <strong>Insecure connection.</strong> This page or API uses HTTP. Your API key and traffic can be observed on the network. Use only on a trusted network; CORS does not encrypt requests.
+      </aside>
+      <aside id="cors-note" class="notice notice-info" hidden>
+        The browser blocked the API request. The API must allow this page's exact origin in <code>CORS_ALLOWED_ORIGINS</code>. Do not use a wildcard origin.
+      </aside>
+
+      <section class="panel connection-panel" aria-labelledby="connection-title">
+        <div class="panel-heading">
+          <div><div class="step-label">01 / CONNECTION</div><h2 id="connection-title">Connect to your API</h2></div>
+          <span class="lock-icon" aria-hidden="true">⌑</span>
+        </div>
+        <div class="connection-grid">
+          <label class="field field-wide">API endpoint
+            <input id="api-base" type="url" value="http://sekai.hopto.org:3100" autocomplete="url" spellcheck="false">
+          </label>
+          <label class="field">API key
+            <input id="api-key" type="password" placeholder="Paste key for this session" autocomplete="off" spellcheck="false">
+          </label>
+          <button id="connect-button" class="button button-secondary" type="button">Connect</button>
+        </div>
+        <div class="connection-foot"><span class="tiny-dot"></span> Key stays in this tab's memory and is cleared when you disconnect or close the page.</div>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <section class="panel request-panel" aria-labelledby="request-title">
+          <div class="panel-heading">
+            <div><div class="step-label">02 / SOURCE</div><h2 id="request-title">Choose a video</h2></div>
+            <span class="step-number">01</span>
+          </div>
+          <form id="inspect-form">
+            <label class="field">YouTube URL
+              <div class="url-entry">
+                <span class="url-icon" aria-hidden="true">↗</span>
+                <input id="video-url" type="url" placeholder="https://www.youtube.com/watch?v=…" maxlength="2048" required>
+                <button id="inspect-button" class="button button-primary" type="submit">Inspect <span aria-hidden="true">→</span></button>
+              </div>
+            </label>
+          </form>
+          <div id="video-summary" class="video-summary" hidden>
+            <div class="video-art"><span>YT</span></div>
+            <div class="video-meta"><div id="video-title" class="video-title"></div><div id="video-details" class="video-details"></div></div>
+          </div>
+          <div id="format-controls" class="format-controls" hidden>
+            <label class="field">Output
+              <select id="output-format"><option value="mp4">MP4 · H.264</option><option value="mkv">MKV · preserve source streams</option><option value="mp3">MP3 · audio only</option></select>
+            </label>
+            <label class="field format-field">Source format
+              <select id="source-format"></select>
+            </label>
+            <button id="create-button" class="button button-primary create-button" type="button">Start download <span aria-hidden="true">↗</span></button>
+          </div>
+          <p id="format-hint" class="helper-text" hidden></p>
+          <div id="request-message" class="inline-message" role="status" hidden></div>
+        </section>
+
+        <section class="panel monitor-panel" aria-labelledby="monitor-title">
+          <div class="panel-heading">
+            <div><div class="step-label">03 / ACTIVITY</div><h2 id="monitor-title">Job monitor</h2></div>
+            <button id="refresh-jobs" class="icon-button" type="button" title="Refresh jobs" aria-label="Refresh jobs">↻</button>
+          </div>
+          <div id="empty-monitor" class="empty-state"><span class="empty-icon">◷</span><strong>No active job</strong><span>Inspect a video and start a download to see live progress here.</span></div>
+          <div id="job-card" class="job-card" hidden>
+            <div class="job-title-line"><div><span id="job-state" class="job-state">QUEUED</span><strong id="job-name">Download job</strong></div><span id="job-percent" class="percent">0%</span></div>
+            <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+            <div class="metrics">
+              <div><span>TRANSFERRED</span><strong id="job-bytes">—</strong></div>
+              <div><span>SPEED</span><strong id="job-speed">—</strong></div>
+              <div><span>ETA</span><strong id="job-eta">—</strong></div>
+            </div>
+            <div id="job-error" class="job-error" hidden></div>
+            <div class="job-actions">
+              <button id="cancel-button" class="button button-quiet" type="button">Cancel job</button>
+              <button id="download-button" class="button button-primary" type="button" hidden>Save file <span aria-hidden="true">↓</span></button>
+            </div>
+            <div id="file-progress" class="file-progress" hidden></div>
+          </div>
+          <div class="recent-heading"><span>RECENT JOBS</span><span id="recent-count">0</span></div>
+          <div id="recent-jobs" class="recent-jobs"><div class="recent-empty">Connect to load job history.</div></div>
+        </section>
+      </section>
+
+      <footer class="footer"><span>YT-DLP API client</span><span>Monitor refreshes every 15 seconds · Job progress every 3 seconds</span></footer>
+    </main>
+  </div>
+</body>
+</html>

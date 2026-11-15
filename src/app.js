@@ -6,7 +6,7 @@ import infoRoutes from "./routes/info.js";
 import formatsRoutes from "./routes/formats.js";
 import downloadRoutes from "./routes/downloads.js";
 
-export async function buildApp({ apiKey, manager, getVideoInfo, getVideoFormats, logger = false, loggerInstance, globalRateLimit = 120 }) {
+export async function buildApp({ apiKey, corsAllowedOrigins = [], manager, getVideoInfo, getVideoFormats, logger = false, loggerInstance, globalRateLimit = 120 }) {
     const app = Fastify({
         logger: loggerInstance ? false : (logger ? { level: "info", redact: ["req.headers.x-api-key", "req.headers.authorization"] } : false),
         ...(loggerInstance ? { loggerInstance } : {}),
@@ -15,6 +15,22 @@ export async function buildApp({ apiKey, manager, getVideoInfo, getVideoFormats,
         requestTimeout: 30_000
     });
     await app.register(rateLimit, { global: true, max: globalRateLimit, timeWindow: "1 minute" });
+    const allowedOrigins = new Set(corsAllowedOrigins);
+    const allowedMethods = "GET, POST, DELETE, OPTIONS";
+    const allowedHeaders = "content-type, x-api-key";
+    app.addHook("onRequest", async (request, reply) => {
+        const origin = request.headers.origin;
+        if (typeof origin !== "string" || !allowedOrigins.has(origin)) return;
+
+        reply.header("Access-Control-Allow-Origin", origin);
+        reply.header("Vary", "Origin");
+        if (request.method === "OPTIONS") {
+            reply.header("Access-Control-Allow-Methods", allowedMethods);
+            reply.header("Access-Control-Allow-Headers", allowedHeaders);
+            reply.header("Access-Control-Max-Age", "600");
+            return reply.code(204).send();
+        }
+    });
     app.addHook("onRequest", createAuthentication(apiKey));
     app.setNotFoundHandler((_request, reply) => reply.code(404).send({ success: false, error: { code: "ROUTE_NOT_FOUND", message: "API endpoint not found" } }));
     app.setErrorHandler((error, request, reply) => {

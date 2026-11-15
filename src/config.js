@@ -28,6 +28,25 @@ function numberEnv(name, fallback, min, max) {
     return value;
 }
 
+function originListEnv(name) {
+    const raw = process.env[name];
+    if (!raw || raw.trim() === "") return [];
+
+    return [...new Set(raw.split(",").map((entry) => {
+        const origin = entry.trim();
+        let parsed;
+        try {
+            parsed = new URL(origin);
+        } catch {
+            throw new Error(`Invalid ${name}: expected comma-separated HTTP(S) origins`);
+        }
+        if (!/^https?:$/.test(parsed.protocol) || parsed.origin !== origin || parsed.username || parsed.password) {
+            throw new Error(`Invalid ${name}: expected comma-separated HTTP(S) origins`);
+        }
+        return origin;
+    }))];
+}
+
 const apiKey = required("API_KEY");
 
 if (Buffer.byteLength(apiKey, "utf8") < 32) {
@@ -39,6 +58,8 @@ const config = {
 
     host: process.env.HOST || "127.0.0.1",
     port: numberEnv("PORT", 3100, 1, 65535),
+
+    corsAllowedOrigins: originListEnv("CORS_ALLOWED_ORIGINS"),
 
     apiKey,
 

@@ -25,6 +25,7 @@ export async function startApiServer({
 
         app = await buildApp({
             apiKey: config.apiKey,
+            corsAllowedOrigins: config.corsAllowedOrigins,
             manager,
             getVideoInfo,
             getVideoFormats,
